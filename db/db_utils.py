@@ -1,19 +1,18 @@
 import psycopg2
 
 def get_connection():
-    conn = psycopg2.connect(
+    return psycopg2.connect(
         dbname="gpa_db",
         user="postgres",
         password="sake",
         host="localhost",
         port="5432"
     )
-    return conn
 
 def check_remembered_user():
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("SELECT uid FROM users WHERE isRemembered = TRUE LIMIT 1;")
+    cur.execute("SELECT uid FROM users WHERE isRemembered=TRUE LIMIT 1;")
     row = cur.fetchone()
     cur.close()
     conn.close()
@@ -28,35 +27,37 @@ def get_user_by_id(uid):
     conn.close()
     if row:
         return {
-            'uid': row[0],
-            'name': row[1],
-            'username': row[2],
-            'pfp': row[3],
-            'theme': row[4],
-            'isRemembered': row[5]
+            "uid": row[0],
+            "name": row[1],
+            "username": row[2],
+            "pfp": row[3],
+            "theme": row[4],
+            "isRemembered": row[5]
         }
     return None
 
 def authenticate_user(username, password):
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("SELECT uid, name, username, pfp, theme, isRemembered FROM users WHERE username=%s AND password=%s",
-                (username, password))
+    cur.execute("""
+        SELECT uid, name, username, pfp, theme, isRemembered
+        FROM users WHERE username=%s AND password=%s
+    """, (username, password))
     row = cur.fetchone()
     cur.close()
     conn.close()
     if row:
         return {
-            'uid': row[0],
-            'name': row[1],
-            'username': row[2],
-            'pfp': row[3],
-            'theme': row[4],
-            'isRemembered': row[5]
+            "uid": row[0],
+            "name": row[1],
+            "username": row[2],
+            "pfp": row[3],
+            "theme": row[4],
+            "isRemembered": row[5]
         }
     return None
 
-def set_is_remembered(uid, val):
+def set_is_remembered(uid, val: bool):
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("UPDATE users SET isRemembered=%s WHERE uid=%s", (val, uid))
@@ -65,20 +66,22 @@ def set_is_remembered(uid, val):
     conn.close()
 
 def register_user(name, username, password):
+    conn = get_connection()
+    cur = conn.cursor()
     try:
-        conn = get_connection()
-        cur = conn.cursor()
         cur.execute("""
             INSERT INTO users (name, username, password)
             VALUES (%s, %s, %s)
         """, (name, username, password))
         conn.commit()
-        cur.close()
-        conn.close()
-        return True
+        result = True
     except Exception as e:
         print(e)
-        return False
+        conn.rollback()
+        result = False
+    cur.close()
+    conn.close()
+    return result
 
 def fetch_sections(uid):
     conn = get_connection()
@@ -87,20 +90,17 @@ def fetch_sections(uid):
     rows = cur.fetchall()
     cur.close()
     conn.close()
-    return [
-        {'did': r[0], 'name': r[1], 'gpa': r[2]}
-        for r in rows
-    ]
+    return [{"did": r[0], "name": r[1], "gpa": r[2]} for r in rows]
 
 def create_section(uid, name):
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("INSERT INTO data (uid, name) VALUES (%s, %s) RETURNING did", (uid, name))
-    did = cur.fetchone()[0]
+    new_did = cur.fetchone()[0]
     conn.commit()
     cur.close()
     conn.close()
-    return did
+    return new_did
 
 def rename_section(did, new_name):
     conn = get_connection()
@@ -126,7 +126,7 @@ def fetch_data_low(did):
     cur.close()
     conn.close()
     return [
-        {'didl': r[0], 'courseName': r[1], 'grade': r[2], 'credits': r[3]}
+        {"didl": r[0], "courseName": r[1], "grade": r[2], "credits": r[3]}
         for r in rows
     ]
 
@@ -150,23 +150,20 @@ def remove_data_low(didl):
     conn.close()
 
 def recalc_section_gpa(did):
-    # Simple GPA calculation: sum of (grade * credits) / sum(credits)
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("SELECT grade, credits FROM datalow WHERE did=%s", (did,))
     rows = cur.fetchall()
-
     if not rows:
         section_gpa = 0
     else:
         total_points = 0
         total_credits = 0
-        for (grade, cr) in rows:
-            total_points += (grade * cr)
+        for (gr, cr) in rows:
+            total_points += (gr * cr)
             total_credits += cr
         section_gpa = total_points / total_credits if total_credits else 0
 
-    # Update data table
     cur.execute("UPDATE data SET gpa=%s WHERE did=%s", (section_gpa, did))
     conn.commit()
     cur.close()

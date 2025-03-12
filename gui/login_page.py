@@ -1,51 +1,55 @@
-import tkinter as tk
-from tkinter import messagebox
-from gui.register_page import RegisterPage
+from PyQt6.QtWidgets import (
+    QDialog, QVBoxLayout, QLabel, QLineEdit, QCheckBox,
+    QPushButton, QMessageBox
+)
 from db.db_utils import authenticate_user, set_is_remembered
+from gui.register_page import RegisterPage
+from gui.main_page import MainWindow
 
 
-class LoginPage(tk.Frame):
-    def __init__(self, master):
-        super().__init__(master)
-        self.master = master
-        self.master.title("Login - GPA Calculator")
-        self.pack()
+class LoginPage(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Login - GPA Calculator")
 
-        self.username_var = tk.StringVar()
-        self.password_var = tk.StringVar()
-        self.remember_var = tk.BooleanVar(value=False)
+        self.username_edit = QLineEdit()
+        self.password_edit = QLineEdit()
+        self.password_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self.remember_box = QCheckBox("Remember me next time")
 
-        # Build the UI
-        tk.Label(self, text="Username").pack(pady=5)
-        tk.Entry(self, textvariable=self.username_var).pack(pady=5)
+        sign_in_btn = QPushButton("Sign In")
+        register_btn = QPushButton("Register New User")
 
-        tk.Label(self, text="Password").pack(pady=5)
-        tk.Entry(self, textvariable=self.password_var, show="*").pack(pady=5)
+        sign_in_btn.clicked.connect(self.handle_login)
+        register_btn.clicked.connect(self.go_to_register)
 
-        tk.Checkbutton(self, text="Remember me next time", variable=self.remember_var).pack()
+        layout = QVBoxLayout()
+        layout.addWidget(QLabel("Username:"))
+        layout.addWidget(self.username_edit)
+        layout.addWidget(QLabel("Password:"))
+        layout.addWidget(self.password_edit)
+        layout.addWidget(self.remember_box)
+        layout.addWidget(sign_in_btn)
+        layout.addWidget(register_btn)
 
-        tk.Button(self, text="Sign In", command=self.handle_login).pack(pady=5)
-        tk.Button(self, text="Register New User", command=self.go_to_register).pack(pady=5)
-
-        self.master.deiconify()  # Show the window
+        self.setLayout(layout)
 
     def handle_login(self):
-        username = self.username_var.get()
-        password = self.password_var.get()
+        username = self.username_edit.text().strip()
+        password = self.password_edit.text().strip()
         user = authenticate_user(username, password)
         if user:
-            uid = user[0]  # or however you structure your DB returns
-            if self.remember_var.get():
-                set_is_remembered(uid, True)
+            if self.remember_box.isChecked():
+                set_is_remembered(user["uid"], True)
             else:
-                set_is_remembered(uid, False)
-            # Go to main page
-            from gui.main_page import MainPage
-            self.destroy()
-            MainPage(self.master, user)
+                set_is_remembered(user["uid"], False)
+
+            self.main_win = MainWindow(user)
+            self.main_win.show()
+            self.close()
         else:
-            messagebox.showerror("Error", "Invalid username or password")
+            QMessageBox.critical(self, "Error", "Invalid username or password")
 
     def go_to_register(self):
-        self.destroy()
-        RegisterPage(self.master)
+        self.register_dialog = RegisterPage(self)
+        self.register_dialog.exec()

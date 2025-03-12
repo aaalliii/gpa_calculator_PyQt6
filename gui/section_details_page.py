@@ -1,71 +1,91 @@
-import tkinter as tk
-from db.db_utils import fetch_data_low, add_data_low, remove_data_low, recalc_section_gpa
+from PyQt6.QtWidgets import (
+    QDialog, QVBoxLayout, QLabel, QLineEdit,
+    QPushButton, QListWidget, QListWidgetItem, QMessageBox
+)
+from PyQt6.QtCore import Qt
+from db.db_utils import (fetch_data_low, add_data_low, remove_data_low,
+                         recalc_section_gpa, rename_section)
 
 
-class SectionDetailsPage(tk.Frame):
-    def __init__(self, master, user, did):
-        super().__init__(master)
-        self.master = master
-        self.user = user
-        self.did = did
-        self.pack(fill="both", expand=True)
+class SectionDetailsDialog(QDialog):
+    def __init__(self, section, parent=None):
+        super().__init__(parent)
+        self.section = section
+        self.setWindowTitle(f"Section Details - {self.section['name']}")
 
-        # Title
-        tk.Button(self, text="← Back", command=self.go_back).pack(side="left", padx=5)
+        layout = QVBoxLayout(self)
 
-        self.title_label = tk.Label(self, text=f"GPA Section (DID={did})")
-        self.title_label.pack(side="left", padx=5)
+        layout.addWidget(QLabel("Section Name:"))
+        self.section_name_edit = QLineEdit(self.section["name"])
+        layout.addWidget(self.section_name_edit)
 
-        self.courses_frame = tk.Frame(self)
-        self.courses_frame.pack(pady=10, fill="both", expand=True)
+        layout.addWidget(QLabel("Courses:"))
+        self.course_list = QListWidget()
+        self.course_list.itemDoubleClicked.connect(self.delete_item)
+        layout.addWidget(self.course_list)
 
-        # Add course form
-        self.course_name_var = tk.StringVar()
-        self.grade_var = tk.DoubleVar()
-        self.credits_var = tk.DoubleVar(value=1.0)
+        self.course_edit = QLineEdit()
+        self.grade_edit = QLineEdit()
+        self.credits_edit = QLineEdit()
 
-        tk.Entry(self, textvariable=self.course_name_var).pack(pady=5)
-        tk.Entry(self, textvariable=self.grade_var).pack(pady=5)
-        tk.Entry(self, textvariable=self.credits_var).pack(pady=5)
+        layout.addWidget(QLabel("Course Name:"))
+        layout.addWidget(self.course_edit)
+        layout.addWidget(QLabel("Grade:"))
+        layout.addWidget(self.grade_edit)
+        layout.addWidget(QLabel("Credits:"))
+        layout.addWidget(self.credits_edit)
 
-        tk.Button(self, text="Add", command=self.handle_add).pack(side="left", padx=5)
-        tk.Button(self, text="Calculate", command=self.handle_calculate).pack(side="left", padx=5)
+        add_btn = QPushButton("Add Course")
+        calc_btn = QPushButton("Calculate GPA")
+        save_btn = QPushButton("Save Section Name")
+
+        add_btn.clicked.connect(self.handle_add)
+        calc_btn.clicked.connect(self.handle_calculate)
+        save_btn.clicked.connect(self.save_section_name)
+
+        layout.addWidget(add_btn)
+        layout.addWidget(calc_btn)
+        layout.addWidget(save_btn)
 
         self.refresh_courses()
 
     def refresh_courses(self):
-        for widget in self.courses_frame.winfo_children():
-            widget.destroy()
-
-        courses = fetch_data_low(self.did)
-        for course in courses:
-            f = tk.Frame(self.courses_frame)
-            f.pack(fill="x", pady=2)
-
-            tk.Label(f, text=course["courseName"]).pack(side="left", padx=5)
-            tk.Label(f, text=str(course["grade"])).pack(side="left", padx=5)
-            tk.Label(f, text=str(course["credits"])).pack(side="left", padx=5)
-
-            del_btn = tk.Button(f, text="✕", command=lambda c=course: self.delete_course(c["didl"]))
-            del_btn.pack(side="right", padx=5)
+        self.course_list.clear()
+        rows = fetch_data_low(self.section["did"])
+        for row in rows:
+            txt = f"{row['courseName']} | grade={row['grade']} | cr={row['credits']}"
+            item = QListWidgetItem(txt)
+            item.setData(Qt.ItemDataRole.UserRole, row)
+            self.course_list.addItem(item)
 
     def handle_add(self):
-        cn = self.course_name_var.get()
-        gr = self.grade_var.get()
-        cr = self.credits_var.get()
-        if cn:
-            add_data_low(self.did, cn, gr, cr)
+        course = self.course_edit.text().strip()
+        try:
+            grade = float(self.grade_edit.text())
+            credits = float(self.credits_edit.text())
+        except ValueError:
+            QMessageBox.warning(self, "Invalid", "Grade/Credits must be numeric.")
+            return
+
+        if course:
+            add_data_low(self.section["did"], course, grade, credits)
             self.refresh_courses()
 
     def handle_calculate(self):
-        recalc_section_gpa(self.did)  # updates the section’s gpa in DB
-        tk.messagebox.showinfo("Done", "Section GPA recalculated!")
+        recalc_section_gpa(self.section["did"])
+        QMessageBox.information(self, "Done", "Section GPA recalculated!")
 
-    def delete_course(self, didl):
-        remove_data_low(didl)
-        self.refresh_courses()
+    def delete_item(self, item):
+        course_data = item.data(Qt.ItemDataRole.UserRole)
+        didl = course_data["didl"]
+        ans = QMessageBox.question(self, "Confirm", f"Delete {course_data['courseName']}?")
+        if ans == QMessageBox.StandardButton.Yes:
+            remove_data_low(didl)
+            self.refresh_courses()
 
-    def go_back(self):
-        from gui.main_page import MainPage
-        self.destroy()
-        MainPage(self.master, self.user)
+    def save_section_name(self):
+        new_name = self.section_name_edit.text().strip()
+        rename_section(self.section["did"], new_name)
+        self.section["name"] = new_name
+        self.setWindowTitle(f"Section Details - {new_name}")
+        QMessageBox.information(self, "Saved", f"Section name changed to '{new_name}'.")

@@ -1,5 +1,4 @@
 import psycopg2
-import os
 
 def init_db():
     conn = psycopg2.connect(
@@ -49,6 +48,3 @@ def init_db():
     conn.commit()
     cur.close()
     conn.close()
-
-if __name__ == "__main__":
-    init_db()

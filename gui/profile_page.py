@@ -1,66 +1,77 @@
-import tkinter as tk
-from tkinter import messagebox
+
+from PyQt6.QtWidgets import (
+    QDialog, QVBoxLayout, QLabel, QLineEdit, QPushButton,
+    QHBoxLayout, QFileDialog
+)
+from PyQt6.QtCore import Qt
 from db.db_utils import update_user_info, set_is_remembered
 
 
-class ProfilePage(tk.Toplevel):
-    def __init__(self, master, user, refresh_callback):
-        super().__init__(master)
+class ProfileDialog(QDialog):
+    def __init__(self, user, parent=None):
+        super().__init__(parent)
         self.user = user
-        self.refresh_callback = refresh_callback
+        self.setWindowTitle("Profile Settings")
 
-        self.title("User Profile")
+        self.name_edit = QLineEdit(self.user["name"])
+        self.pfp_edit = QLineEdit(self.user.get("pfp", ""))
+        self.choose_pfp_btn = QPushButton("Choose File")
 
-        self.new_name_var = tk.StringVar(value=user['name'])
-        self.theme_var = tk.StringVar(value=user['theme'])
+        self.theme_edit = QLineEdit(self.user.get("theme", "light"))
 
-        tk.Label(self, text="Profile Picture (URL)").pack(pady=5)
-        # For changing pfp, you might just use an entry or a file dialog
-        self.pfp_var = tk.StringVar(value=user['pfp'] if user['pfp'] else "")
-        tk.Entry(self, textvariable=self.pfp_var).pack(pady=5)
+        save_btn = QPushButton("Save Changes")
+        cancel_btn = QPushButton("Cancel")
+        logout_btn = QPushButton("Log Out")
 
-        tk.Label(self, text="Name").pack(pady=5)
-        tk.Entry(self, textvariable=self.new_name_var).pack(pady=5)
+        save_btn.clicked.connect(self.save_changes)
+        cancel_btn.clicked.connect(self.close)
+        logout_btn.clicked.connect(self.log_out)
+        self.choose_pfp_btn.clicked.connect(self.choose_pfp)
 
-        # Theme toggle
-        self.theme_button = tk.Button(self, text=f"Toggle Theme (Current: {self.theme_var.get()})",
-                                      command=self.toggle_theme)
-        self.theme_button.pack(pady=5)
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("Name:"))
+        layout.addWidget(self.name_edit)
 
-        tk.Button(self, text="Save Changes", command=self.save_changes).pack(pady=5)
-        tk.Button(self, text="Cancel", command=self.cancel).pack(pady=5)
-        tk.Button(self, text="Log Out", command=self.log_out).pack(pady=5)
+        layout.addWidget(QLabel("Profile Pic Path:"))
+        pfp_layout = QHBoxLayout()
+        pfp_layout.addWidget(self.pfp_edit)
+        pfp_layout.addWidget(self.choose_pfp_btn)
+        layout.addLayout(pfp_layout)
 
-    def toggle_theme(self):
-        if self.theme_var.get() == "light":
-            self.theme_var.set("dark")
-        else:
-            self.theme_var.set("light")
-        self.theme_button.config(text=f"Toggle Theme (Current: {self.theme_var.get()})")
+        layout.addWidget(QLabel("Theme (light/dark/...):"))
+        layout.addWidget(self.theme_edit)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.addWidget(save_btn)
+        btn_layout.addWidget(cancel_btn)
+        btn_layout.addWidget(logout_btn)
+        layout.addLayout(btn_layout)
+
+    def choose_pfp(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Choose Profile Picture", "", "Images (*.png *.jpg *.jpeg *.bmp *.gif)"
+        )
+        if file_path:
+            self.pfp_edit.setText(file_path)
 
     def save_changes(self):
-        update_user_info(
-            self.user['uid'],
-            self.new_name_var.get(),
-            self.pfp_var.get(),
-            self.theme_var.get()
-        )
-        self.refresh_callback({**self.user,
-                               'name': self.new_name_var.get(),
-                               'pfp': self.pfp_var.get(),
-                               'theme': self.theme_var.get()
-                               })
-        self.destroy()
+        new_name = self.name_edit.text().strip()
+        new_pfp = self.pfp_edit.text().strip()
+        new_theme = self.theme_edit.text().strip()
 
-    def cancel(self):
-        self.destroy()
+        update_user_info(self.user["uid"], new_name, new_pfp, new_theme)
+        self.user["name"] = new_name
+        self.user["pfp"] = new_pfp
+        self.user["theme"] = new_theme
+
+        self.close()
 
     def log_out(self):
-        # Set isRemembered = false for this user
-        set_is_remembered(self.user['uid'], False)
-        # Return to login page
+        set_is_remembered(self.user["uid"], False)
+        if self.parent():
+            self.parent().close()
+        self.close()
+
         from gui.login_page import LoginPage
-        self.master.destroy()  # close main window
-        root = tk.Tk()
-        LoginPage(root)
-        self.destroy()
+        login = LoginPage()
+        login.exec()

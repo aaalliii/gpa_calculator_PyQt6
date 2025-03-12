@@ -1,47 +1,49 @@
-import tkinter as tk
-from tkinter import messagebox
+from PyQt6.QtWidgets import (
+    QDialog, QVBoxLayout, QLabel, QLineEdit,
+    QPushButton, QMessageBox
+)
 from db.db_utils import register_user
 
-class RegisterPage(tk.Frame):
-    def __init__(self, master):
-        super().__init__(master)
-        self.master = master
-        self.master.title("Register - GPA Calculator")
-        self.pack()
 
-        self.name_var = tk.StringVar()
-        self.username_var = tk.StringVar()
-        self.password_var = tk.StringVar()
+class RegisterPage(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Register - GPA Calculator")
 
-        tk.Label(self, text="Name").pack(pady=5)
-        tk.Entry(self, textvariable=self.name_var).pack(pady=5)
+        self.name_edit = QLineEdit()
+        self.username_edit = QLineEdit()
+        self.password_edit = QLineEdit()
+        self.password_edit.setEchoMode(QLineEdit.EchoMode.Password)
 
-        tk.Label(self, text="Username").pack(pady=5)
-        tk.Entry(self, textvariable=self.username_var).pack(pady=5)
+        register_btn = QPushButton("Register")
+        back_btn = QPushButton("Back to Login")
 
-        tk.Label(self, text="Password").pack(pady=5)
-        tk.Entry(self, textvariable=self.password_var, show="*").pack(pady=5)
+        register_btn.clicked.connect(self.handle_register)
+        back_btn.clicked.connect(self.go_back)
 
-        tk.Button(self, text="Register", command=self.handle_register).pack(pady=5)
-        tk.Button(self, text="Back to Login", command=self.go_back).pack(pady=5)
+        layout = QVBoxLayout()
+        layout.addWidget(QLabel("Name:"))
+        layout.addWidget(self.name_edit)
+        layout.addWidget(QLabel("Username:"))
+        layout.addWidget(self.username_edit)
+        layout.addWidget(QLabel("Password:"))
+        layout.addWidget(self.password_edit)
+        layout.addWidget(register_btn)
+        layout.addWidget(back_btn)
 
-        self.master.deiconify()
+        self.setLayout(layout)
 
     def handle_register(self):
-        name = self.name_var.get()
-        username = self.username_var.get()
-        password = self.password_var.get()
+        name = self.name_edit.text().strip()
+        username = self.username_edit.text().strip()
+        password = self.password_edit.text().strip()
 
         success = register_user(name, username, password)
         if success:
-            messagebox.showinfo("Success", "User registered!")
-            from gui.login_page import LoginPage
-            self.destroy()
-            LoginPage(self.master)
+            QMessageBox.information(self, "Success", "User registered!")
+            self.close()
         else:
-            messagebox.showerror("Error", "Registration failed (username may exist)")
+            QMessageBox.critical(self, "Error", "Registration failed (username may exist)")
 
     def go_back(self):
-        from gui.login_page import LoginPage
-        self.destroy()
-        LoginPage(self.master)
+        self.close()

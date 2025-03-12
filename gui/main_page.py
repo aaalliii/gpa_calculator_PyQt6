@@ -1,94 +1,151 @@
-import tkinter as tk
-from tkinter import messagebox
-from db.db_utils import fetch_sections, create_section
+from PyQt6.QtWidgets import (
+    QMainWindow,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QListWidget,
+    QListWidgetItem,
+    QMessageBox
+)
+from PyQt6.QtGui import QPixmap
+from PyQt6.QtCore import Qt
+
+from db.db_utils import fetch_sections, create_section, delete_section
+from gui.section_details_page import SectionDetailsDialog
+from gui.profile_page import ProfileDialog
 
 
-class MainPage(tk.Frame):
-    def __init__(self, master, user):
-        super().__init__(master)
-        self.master = master
-        self.user = user  # user info from DB (UID, name, theme, etc.)
-        self.master.title("GPA Calculator - Main")
-        self.pack(fill="both", expand=True)
+class MainWindow(QMainWindow):
+    def __init__(self, user):
+        super().__init__()
+        self.user = user
+        self.setWindowTitle("GPA Calculator")
 
-        self.sections_frame = tk.Frame(self)
-        self.sections_frame.pack(pady=10, fill="both", expand=True)
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        main_layout = QVBoxLayout(central_widget)
 
-        # A label to show total average GPA (you can dynamically recalc if needed)
-        self.gpa_label = tk.Label(self, text="Your GPA is 0.0")
-        self.gpa_label.pack()
 
-        # Buttons
-        tk.Button(self, text="Settings", command=self.open_settings).pack(side="left", padx=5)
-        tk.Button(self, text=f"{self.user['name']}", command=self.open_profile).pack(side="right", padx=5)
+        top_row = QHBoxLayout()
 
-        # Section list
+        self.pfp_label = QLabel()
+        self.load_pfp_image()
+        top_row.addWidget(self.pfp_label, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        top_row.addStretch(1)
+
+        self.gpa_label = QLabel("Your GPA is 0.0")
+        self.gpa_label.setStyleSheet("font-size: 14pt;")
+        top_row.addWidget(self.gpa_label, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        top_row.addStretch(1)
+
+        main_layout.addLayout(top_row)
+
+
+        self.sections_list = QListWidget()
+        self.sections_list.itemDoubleClicked.connect(self.open_section_details)
+        main_layout.addWidget(self.sections_list)
+
+
+        buttons_row = QHBoxLayout()
+
+        self.profile_btn = QPushButton(f"Profile: {self.user['name']}")
+        self.profile_btn.clicked.connect(self.open_profile)
+        buttons_row.addWidget(self.profile_btn)
+
+        self.add_section_btn = QPushButton("Add Section")
+        self.add_section_btn.clicked.connect(self.add_section)
+        buttons_row.addWidget(self.add_section_btn)
+
+        self.delete_section_btn = QPushButton("Delete Selection")
+        self.delete_section_btn.clicked.connect(self.delete_selected_section)
+        buttons_row.addWidget(self.delete_section_btn)
+
+        main_layout.addLayout(buttons_row)
+
         self.refresh_sections()
 
-        # + Button to add a new Section
-        tk.Button(self, text="+ Add Section", command=self.add_section).pack(pady=5)
 
-        self.master.deiconify()
+    def load_pfp_image(self):
+        pfp_path = self.user.get("pfp", "")
+        if pfp_path:
+            pix = QPixmap(pfp_path)
+            if not pix.isNull():
+                pix = pix.scaled(50, 50, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                self.pfp_label.setPixmap(pix)
+                self.pfp_label.setFixedSize(50, 50)
+                self.pfp_label.setStyleSheet("""
+                    QLabel {
+                        border-radius: 25px; /* half of 50 */
+                        overflow: hidden;
+                    }
+                """)
+            else:
+                self.pfp_label.setText("No PFP")
+        else:
+            self.pfp_label.setText("No PFP")
+
 
     def refresh_sections(self):
-        # Clear old frame
-        for widget in self.sections_frame.winfo_children():
-            widget.destroy()
 
-        # Fetch sections from DB
-        uid = self.user['uid']
-        sections = fetch_sections(uid)
+        self.sections_list.clear()
+        sections = fetch_sections(self.user["uid"])
+        if not sections:
+            self.gpa_label.setText("Your GPA is 0.0 (no sections yet)")
+            return
 
-        # Calculate overall average
         total_gpa = 0
         count = 0
-
         for sec in sections:
-            # Each sec might be a dict: { 'did':X, 'name':..., 'gpa':... }
-            frame = tk.Frame(self.sections_frame)
-            frame.pack(fill="x", pady=5)
+            item_text = f"{sec['name']} | GPA: {sec['gpa']:.2f}"
+            item = QListWidgetItem(item_text)
+            item.setData(Qt.ItemDataRole.UserRole, sec)
+            self.sections_list.addItem(item)
 
-            tk.Label(frame, text=sec['name']).pack(side="left", padx=5)
-            tk.Label(frame, text=str(sec['gpa'])).pack(side="left", padx=5)
-
-            # Edit button
-            edit_btn = tk.Button(frame, text="✎", command=lambda s=sec: self.edit_section(s))
-            edit_btn.pack(side="right", padx=5)
-
-            # Click on frame to open detail
-            frame.bind("<Button-1>", lambda e, s=sec: self.open_section_details(s))
-
-            total_gpa += sec['gpa']
+            total_gpa += sec["gpa"]
             count += 1
 
-        avg_gpa = round(total_gpa / count, 2) if count else 0.0
-        self.gpa_label.config(text=f"Your GPA is {avg_gpa}")
+        avg_gpa = total_gpa / count if count else 0.0
+        self.gpa_label.setText(f"Your GPA is {avg_gpa:.2f}")
+
 
     def add_section(self):
-        # Create a new section in DB
-        did = create_section(self.user['uid'], "New GPA Section")
-        # Possibly open it directly in the “details” page
-        from gui.section_details_page import SectionDetailsPage
-        self.destroy()
-        SectionDetailsPage(self.master, self.user, did)
 
-    def edit_section(self, section):
-        # Open a small popup to rename or delete the section
-        from gui.edit_section_page import EditSectionPage
-        EditSectionPage(self.master, section, self.refresh_sections)
+        create_section(self.user["uid"], "New GPA Section")
+        self.refresh_sections()
 
-    def open_section_details(self, section):
-        from gui.section_details_page import SectionDetailsPage
-        self.destroy()
-        SectionDetailsPage(self.master, self.user, section['did'])
+    def delete_selected_section(self):
 
-    def open_settings(self):
-        messagebox.showinfo("Settings", "Show settings popup or new page here...")
+        item = self.sections_list.currentItem()
+        if not item:
+            QMessageBox.warning(self, "No Selection", "Please select a section to delete.")
+            return
+
+        sec_data = item.data(Qt.ItemDataRole.UserRole)
+        answer = QMessageBox.question(
+            self,
+            "Confirm Delete",
+            f"Are you sure you want to delete '{sec_data['name']}'?"
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            delete_section(sec_data["did"])
+            self.refresh_sections()
+
+    def open_section_details(self, item):
+
+        sec_data = item.data(Qt.ItemDataRole.UserRole)
+        dialog = SectionDetailsDialog(sec_data, self)
+        dialog.exec()
+        self.refresh_sections()
 
     def open_profile(self):
-        from gui.profile_page import ProfilePage
-        ProfilePage(self.master, self.user, self.update_profile_callback)
 
-    def update_profile_callback(self, updated_user):
-        self.user = updated_user
+        dialog = ProfileDialog(self.user, parent=self)
+        dialog.exec()
+
+        self.profile_btn.setText(f"Profile: {self.user['name']}")
+        self.load_pfp_image()
         self.refresh_sections()
